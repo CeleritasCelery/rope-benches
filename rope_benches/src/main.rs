@@ -196,21 +196,29 @@ fn gen_strings(rng: &mut SmallRng) -> Vec<String> {
         let len = rng.gen_range(1..3);
         strings.push(random_ascii_string(rng, len));
     }
-
     strings
 }
 
-fn ins_append<R: Rope>(b: &mut Bencher) {
+fn gen_small_string(rng: &mut SmallRng) -> Vec<String> {
+    let mut strings = Vec::<String>::new();
+    for _ in 0..1000 {
+        let len = rng.gen_range(1..3);
+        strings.push(random_string(rng, len));
+    }
+    strings
+}
+
+fn append_small<R: Rope>(b: &mut Bencher) {
     let mut rng = SmallRng::seed_from_u64(123);
-    let strings = gen_strings(&mut rng);
+    let strings = gen_small_string(&mut rng);
 
     let mut r = R::new();
     let mut len = 0;
     b.iter(|| {
-        // let pos = rng.gen_range(0, len+1);
-        let text = &strings[rng.gen_range(0..strings.len())];
-        r.insert_at(len, text.as_str());
-        len += text.chars().count();
+        for text in &strings {
+            r.insert_at(len, text.as_str());
+            len += text.chars().count();
+        }
     });
 
     black_box(r.char_len());
@@ -234,7 +242,7 @@ fn ins_random<R: Rope>(b: &mut Bencher) {
     black_box(len);
 }
 
-fn create<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher) {
+fn create<R: for<'a> From<&'a str>>(b: &mut Bencher) {
     let rng = &mut SmallRng::seed_from_u64(123);
     let string = random_string(rng, usize::pow(2, 20));
     let init = string.as_str();
@@ -250,7 +258,7 @@ fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) 
     // I wish there was a better syntax for just making an array here.
     let strings = gen_strings(&mut rng);
 
-    let mut r = R::from(random_ascii_string(&mut rng, target_length));
+    let mut r = R::from(random_string(&mut rng, target_length));
     let mut len = target_length;
 
     b.iter(|| {
@@ -288,14 +296,13 @@ fn bench_create(c: &mut Criterion) {
 }
 
 #[allow(unused)]
-fn bench_ins_append(c: &mut Criterion) {
-    let mut group = c.benchmark_group("ins_append");
+fn bench_append_small(c: &mut Criterion) {
+    let mut group = c.benchmark_group("append_small");
 
-    group.bench_function("buffer", ins_append::<Buffer>);
-    group.bench_function("jumprope", ins_append::<JumpRope>);
-    group.bench_function("jumprope-buf", ins_append::<JumpRopeBuf>);
-    group.bench_function("ropey", ins_append::<RopeyRope>);
-    group.bench_function("crop", ins_append::<CropRope>);
+    group.bench_function("buffer", append_small::<Buffer>);
+    group.bench_function("jumprope", append_small::<JumpRope>);
+    group.bench_function("jumprope-buf", append_small::<JumpRopeBuf>);
+    group.bench_function("ropey", append_small::<RopeyRope>);
     group.finish();
 }
 
@@ -397,7 +404,7 @@ fn realworld(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_create,
-    bench_ins_append,
+    bench_append_small,
     bench_ins_random,
     bench_stable_ins_del,
     realworld
