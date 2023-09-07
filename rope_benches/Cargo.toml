@@ -4,16 +4,12 @@ edition = "2018"
 name = "rope_benches"
 version = "0.1.0"
 
-[build-dependencies]
-cc = "1.0"
 
 [dependencies]
-criterion = "0.3"
+criterion = "0.5"
 jumprope = { path = ".." }
 rand = { version = "0.8", features = ["small_rng"] }
 ropey = "1.6.0"
 xi-rope = "0.3.0"
-an-rope = { version = "0.3.1", features = ["tendril"] }
 crdt-testdata = { path = "../crdt-testdata" }
-#crop = { path = "../../../3rdparty/crop" }
 crop = { git = "https://github.com/noib3/crop" }
