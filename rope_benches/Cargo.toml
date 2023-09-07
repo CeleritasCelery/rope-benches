@@ -13,3 +13,4 @@ ropey = "1.6.0"
 xi-rope = "0.3.0"
 crdt-testdata = { path = "../crdt-testdata" }
 crop = { git = "https://github.com/noib3/crop" }
+text-buffer = {path = "/Users/troyhinckley/rune/crates/text-buffer"}

@@ -14,6 +14,7 @@ use std::cmp::min;
 
 use crop::Rope as CropRope;
 use ropey::Rope as RopeyRope;
+use text_buffer::Buffer;
 
 const CHARS: &[u8; 83] =
     b" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()[]{}<>?,./";
@@ -25,6 +26,12 @@ fn random_ascii_string(rng: &mut SmallRng, len: usize) -> String {
         s.push(CHARS[rng.gen_range(0..CHARS.len())] as char);
     }
     s
+}
+
+fn random_string(rng: &mut SmallRng, len: usize) -> String {
+    (0..len)
+        .map(|_| std::char::from_u32(rng.gen_range(0x0000..0xD7FF)).unwrap())
+        .collect()
 }
 
 impl Rope for JumpRope {
@@ -150,6 +157,34 @@ impl Rope for CropRope {
         self.byte_len()
     }
 }
+impl Rope for Buffer {
+    const NAME: &'static str = "Buffer";
+
+    #[inline(always)]
+    fn new() -> Self {
+        Buffer::new()
+    }
+
+    #[inline(always)]
+    fn insert_at(&mut self, pos: usize, contents: &str) {
+        self.set_cursor(pos);
+        self.insert(contents);
+    }
+    #[inline(always)]
+    fn del_at(&mut self, pos: usize, len: usize) {
+        self.delete_range(pos, pos + len);
+    }
+
+    #[inline(always)]
+    fn to_string(&self) -> String {
+        unimplemented!()
+    }
+
+    #[inline(always)]
+    fn char_len(&self) -> usize {
+        self.len_chars()
+    } // in unicode values
+}
 
 use crdt_testdata::{load_testing_data, TestData};
 use criterion::measurement::WallTime;
@@ -199,6 +234,15 @@ fn ins_random<R: Rope>(b: &mut Bencher) {
     black_box(len);
 }
 
+fn create<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher) {
+    let rng = &mut SmallRng::seed_from_u64(123);
+    let string = random_string(rng, usize::pow(2, 20));
+    let init = string.as_str();
+    b.iter(|| {
+        black_box(R::from(init));
+    });
+}
+
 fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) {
     let target_length = *target_length as usize;
     let mut rng = SmallRng::seed_from_u64(123);
@@ -234,10 +278,22 @@ fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) 
 }
 
 #[allow(unused)]
+fn bench_create(c: &mut Criterion) {
+    let mut group = c.benchmark_group("create");
+    group.bench_function("buffer", create::<Buffer>);
+    group.bench_function("jumprope", create::<JumpRope>);
+    group.bench_function("ropey", create::<RopeyRope>);
+    group.bench_function("crop", create::<CropRope>);
+    group.finish();
+}
+
+#[allow(unused)]
 fn bench_ins_append(c: &mut Criterion) {
     let mut group = c.benchmark_group("ins_append");
 
+    group.bench_function("buffer", ins_append::<Buffer>);
     group.bench_function("jumprope", ins_append::<JumpRope>);
+    group.bench_function("jumprope-buf", ins_append::<JumpRopeBuf>);
     group.bench_function("ropey", ins_append::<RopeyRope>);
     group.bench_function("crop", ins_append::<CropRope>);
     group.finish();
@@ -247,7 +303,9 @@ fn bench_ins_append(c: &mut Criterion) {
 fn bench_ins_random(c: &mut Criterion) {
     let mut group = c.benchmark_group("ins_random");
 
+    group.bench_function("buffer", ins_random::<Buffer>);
     group.bench_function("jumprope", ins_random::<JumpRope>);
+    group.bench_function("jumprope-buf", ins_random::<JumpRopeBuf>);
     group.bench_function("ropey", ins_random::<RopeyRope>);
     group.bench_function("crop", ins_random::<CropRope>);
     group.finish();
@@ -257,8 +315,13 @@ fn bench_ins_random(c: &mut Criterion) {
 fn bench_stable_ins_del(c: &mut Criterion) {
     let mut group = c.benchmark_group("stable_ins_del");
 
-    for size in [1000, 10000, 100000, 1000000, 10000000].iter() {
+    for size in [1000, 100000, 10000000].iter() {
         group.throughput(Throughput::Elements(*size));
+        group.bench_with_input(
+            BenchmarkId::new("buffer", size),
+            size,
+            stable_ins_del::<Buffer>,
+        );
         group.bench_with_input(
             BenchmarkId::new("jumprope", size),
             size,
@@ -284,7 +347,6 @@ fn load_named_data(name: &str) -> TestData {
         env!("CARGO_MANIFEST_DIR"),
         name
     );
-    println!("loading {}", filename);
     load_testing_data(&filename)
 }
 
@@ -319,6 +381,7 @@ fn realworld(c: &mut Criterion) {
             });
         }
 
+        x::<Buffer>(&mut group, name, &test_data_chars);
         x::<RopeyRope>(&mut group, name, &test_data_chars);
         x::<JumpRope>(&mut group, name, &test_data_chars);
         x::<JumpRopeBuf>(&mut group, name, &test_data_chars);
@@ -333,6 +396,7 @@ fn realworld(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_create,
     bench_ins_append,
     bench_ins_random,
     bench_stable_ins_del,
