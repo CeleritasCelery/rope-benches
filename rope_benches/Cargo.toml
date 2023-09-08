@@ -9,8 +9,9 @@ version = "0.1.0"
 criterion = "0.5"
 jumprope = { path = ".." }
 rand = { version = "0.8", features = ["small_rng"] }
-ropey = "1.6.0"
+ropey = {version = "1.6.0", features = ["simd"]}
 xi-rope = "0.3.0"
 crdt-testdata = { path = "../crdt-testdata" }
 crop = { git = "https://github.com/noib3/crop" }
 text-buffer = {path = "/Users/troyhinckley/rune/crates/text-buffer"}
+regex = "1.9.5"

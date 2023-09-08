@@ -10,9 +10,15 @@ mod rope;
 use self::rope::*;
 use jumprope::*;
 
-use std::cmp::min;
+use std::{
+    borrow::Cow,
+    cmp::min,
+    fs::File,
+    io::{BufReader, Read},
+};
 
 use crop::Rope as CropRope;
+use regex::Regex;
 use ropey::Rope as RopeyRope;
 use text_buffer::Buffer;
 
@@ -64,45 +70,11 @@ impl Rope for JumpRope {
     #[inline(always)]
     fn char_len(&self) -> usize {
         self.len_chars()
-    } // in unicode values
-}
-
-impl Rope for JumpRopeBuf {
-    const NAME: &'static str = "JumpRopeBuf";
-
-    #[inline(always)]
-    fn new() -> Self {
-        JumpRopeBuf::new()
     }
 
-    #[inline(always)]
-    fn insert_at(&mut self, pos: usize, contents: &str) {
-        self.insert(pos, contents);
+    fn line_search(&self, re: &regex::Regex) -> usize {
+        self.full_search(re)
     }
-    #[inline(always)]
-    fn del_at(&mut self, pos: usize, len: usize) {
-        self.remove(pos..pos + len);
-    }
-
-    #[inline(always)]
-    fn edit_at(&mut self, pos: usize, del_len: usize, ins_content: &str) {
-        if del_len > 0 {
-            self.remove(pos..pos + del_len);
-        }
-        if !ins_content.is_empty() {
-            self.insert(pos, ins_content);
-        }
-    }
-
-    #[inline(always)]
-    fn to_string(&self) -> String {
-        ToString::to_string(self)
-    }
-
-    #[inline(always)]
-    fn char_len(&self) -> usize {
-        self.len_chars()
-    } // in unicode values
 }
 
 impl Rope for RopeyRope {
@@ -124,13 +96,36 @@ impl Rope for RopeyRope {
 
     #[inline(always)]
     fn to_string(&self) -> String {
-        unimplemented!()
+        self.chunks().collect()
     }
 
     #[inline(always)]
     fn char_len(&self) -> usize {
         self.len_chars()
-    } // in unicode values
+    }
+
+    fn line_search(&self, re: &regex::Regex) -> usize {
+        let mut lines = self.lines();
+        let mut offset: usize = 0;
+        lines.find(|line| {
+            let cow: Cow<str> = line.clone().into();
+            let re_match = match cow {
+                Cow::Borrowed(x) => re.find(x).map(|x| x.start()),
+                Cow::Owned(x) => re.find(x.as_str()).map(|x| x.start()),
+            };
+            match re_match {
+                Some(x) => {
+                    offset += x;
+                    true
+                }
+                None => {
+                    offset += line.len_bytes();
+                    false
+                }
+            }
+        });
+        offset
+    }
 }
 
 impl Rope for CropRope {
@@ -155,6 +150,33 @@ impl Rope for CropRope {
 
     fn char_len(&self) -> usize {
         self.byte_len()
+    }
+
+    fn line_search(&self, re: &regex::Regex) -> usize {
+        let mut lines = self.raw_lines();
+        let mut offset: usize = 0;
+        lines.find(|line| {
+            let chunks = line.chunks();
+            let buf: Vec<&str> = chunks.collect();
+            let re_match = if buf.len() == 1 {
+                re.find(buf[0]).map(|x| x.start())
+            } else {
+                let string: String = buf.iter().map(|x| *x).collect();
+                re.find(string.as_str()).map(|x| x.start())
+            };
+
+            match re_match {
+                Some(x) => {
+                    offset += x;
+                    true
+                }
+                None => {
+                    offset += line.byte_len();
+                    false
+                }
+            }
+        });
+        offset
     }
 }
 impl Rope for Buffer {
@@ -183,7 +205,18 @@ impl Rope for Buffer {
     #[inline(always)]
     fn char_len(&self) -> usize {
         self.len_chars()
-    } // in unicode values
+    }
+
+    fn line_search(&self, re: &regex::Regex) -> usize {
+        match self.read(..) {
+            Cow::Borrowed(x) => re.find(x).map(|x| x.start()).unwrap_or_else(|| self.len()),
+            Cow::Owned(_) => unreachable!(),
+        }
+    }
+
+    fn full_search(&self, re: &regex::Regex) -> usize {
+        self.line_search(re)
+    }
 }
 
 use crdt_testdata::{load_testing_data, TestData};
@@ -222,6 +255,42 @@ fn append_small<R: Rope>(b: &mut Bencher) {
     });
 
     black_box(r.char_len());
+}
+
+fn search_linewise<R: Rope + From<String>>(b: &mut Bencher) {
+    let filename = format!("{}/data/realworld.txt", env!("CARGO_MANIFEST_DIR"));
+    // read the file into a string
+    let file = File::open(filename).unwrap();
+    let mut reader = BufReader::new(file);
+    let mut contents = String::new();
+    reader.read_to_string(&mut contents).unwrap();
+    // duplicate contents 40 times
+    let contents = contents.repeat(40);
+
+    let r = R::from(contents);
+
+    let re = Regex::new(r"foo(bar|baz)fob").unwrap();
+    b.iter(|| {
+        black_box(r.line_search(&re));
+    });
+}
+
+fn search_full<R: Rope + From<String>>(b: &mut Bencher) {
+    let filename = format!("{}/data/realworld.txt", env!("CARGO_MANIFEST_DIR"));
+    // read the file into a string
+    let file = File::open(filename).unwrap();
+    let mut reader = BufReader::new(file);
+    let mut contents = String::new();
+    reader.read_to_string(&mut contents).unwrap();
+    // duplicate contents 40 times
+    let contents = contents.repeat(40);
+
+    let r = R::from(contents);
+
+    let re = Regex::new(r"(?s)foo..fob").unwrap();
+    b.iter(|| {
+        black_box(r.full_search(&re));
+    });
 }
 
 fn ins_random<R: Rope>(b: &mut Bencher) {
@@ -301,8 +370,31 @@ fn bench_append_small(c: &mut Criterion) {
 
     group.bench_function("buffer", append_small::<Buffer>);
     group.bench_function("jumprope", append_small::<JumpRope>);
-    group.bench_function("jumprope-buf", append_small::<JumpRopeBuf>);
     group.bench_function("ropey", append_small::<RopeyRope>);
+    group.finish();
+}
+
+#[allow(unused)]
+fn bench_search_linewise(c: &mut Criterion) {
+    let mut group = c.benchmark_group("search_linewise");
+    group.sample_size(50);
+
+    group.bench_function("buffer", search_linewise::<Buffer>);
+    group.bench_function("jumprope", search_linewise::<JumpRope>);
+    group.bench_function("ropey", search_linewise::<RopeyRope>);
+    group.bench_function("crop", search_linewise::<CropRope>);
+    group.finish();
+}
+
+#[allow(unused)]
+fn bench_search_full(c: &mut Criterion) {
+    let mut group = c.benchmark_group("search_full");
+    group.sample_size(50);
+
+    group.bench_function("buffer", search_full::<Buffer>);
+    group.bench_function("jumprope", search_full::<JumpRope>);
+    group.bench_function("ropey", search_full::<RopeyRope>);
+    group.bench_function("crop", search_full::<CropRope>);
     group.finish();
 }
 
@@ -312,7 +404,6 @@ fn bench_ins_random(c: &mut Criterion) {
 
     group.bench_function("buffer", ins_random::<Buffer>);
     group.bench_function("jumprope", ins_random::<JumpRope>);
-    group.bench_function("jumprope-buf", ins_random::<JumpRopeBuf>);
     group.bench_function("ropey", ins_random::<RopeyRope>);
     group.bench_function("crop", ins_random::<CropRope>);
     group.finish();
@@ -391,7 +482,6 @@ fn realworld(c: &mut Criterion) {
         x::<Buffer>(&mut group, name, &test_data_chars);
         x::<RopeyRope>(&mut group, name, &test_data_chars);
         x::<JumpRope>(&mut group, name, &test_data_chars);
-        x::<JumpRopeBuf>(&mut group, name, &test_data_chars);
         x::<CropRope>(&mut group, name, &test_data_bytes);
 
         // This takes a long time to run.
@@ -405,6 +495,8 @@ criterion_group!(
     benches,
     bench_create,
     bench_append_small,
+    bench_search_linewise,
+    bench_search_full,
     bench_ins_random,
     bench_stable_ins_del,
     realworld

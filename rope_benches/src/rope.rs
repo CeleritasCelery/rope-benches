@@ -21,13 +21,11 @@ pub trait Rope: From<String> {
             self.insert_at(pos, ins_content);
         }
     }
-
-    // fn del_at<R: RangeBounds<usize>>(&mut self, range: R) -> Result<(), RopeError>;
-
-    // fn slice(&self, pos: usize, len: usize) -> Result<String, RopeError>;
-
     fn to_string(&self) -> String;
-    
-    // fn len(&self) -> usize; // in bytes
-    fn char_len(&self) -> usize; // in unicode values
+    fn char_len(&self) -> usize;
+    fn line_search(&self, re: &regex::Regex) -> usize;
+    fn full_search(&self, re: &regex::Regex) -> usize {
+        let string = self.to_string();
+        re.find(string.as_str()).map(|m| m.start()).unwrap_or_else(|| self.char_len())
+    }
 }
