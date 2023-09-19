@@ -1,25 +1,20 @@
 // #[macro_use]
 extern crate criterion;
-use criterion::*;
-
 use crdt_testdata::*;
-
+use criterion::*;
 use rand::prelude::*;
-
 mod rope;
 use self::rope::*;
-use jumprope::*;
-
+use crop::Rope as CropRope;
+use jumprope::JumpRope;
+use regex::Regex;
+use ropey::Rope as RopeyRope;
 use std::{
     borrow::Cow,
     cmp::min,
     fs::File,
     io::{BufReader, Read},
 };
-
-use crop::Rope as CropRope;
-use regex::Regex;
-use ropey::Rope as RopeyRope;
 use text_buffer::Buffer;
 
 const CHARS: &[u8; 83] =
@@ -75,6 +70,10 @@ impl Rope for JumpRope {
     fn line_search(&self, re: &regex::Regex) -> usize {
         self.full_search(re)
     }
+
+    fn byte_len(&self) -> usize {
+        self.len_bytes()
+    }
 }
 
 impl Rope for RopeyRope {
@@ -125,6 +124,10 @@ impl Rope for RopeyRope {
             }
         });
         offset
+    }
+
+    fn byte_len(&self) -> usize {
+        self.len_bytes()
     }
 }
 
@@ -178,6 +181,10 @@ impl Rope for CropRope {
         });
         offset
     }
+
+    fn byte_len(&self) -> usize {
+        self.byte_len()
+    }
 }
 impl Rope for Buffer {
     const NAME: &'static str = "Buffer";
@@ -203,6 +210,11 @@ impl Rope for Buffer {
     }
 
     #[inline(always)]
+    fn get_string(&self) -> Cow<'_, str> {
+        self.read(..)
+    }
+
+    #[inline(always)]
     fn char_len(&self) -> usize {
         self.len_chars()
     }
@@ -216,6 +228,10 @@ impl Rope for Buffer {
 
     fn full_search(&self, re: &regex::Regex) -> usize {
         self.line_search(re)
+    }
+
+    fn byte_len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -275,21 +291,41 @@ fn search_linewise<R: Rope + From<String>>(b: &mut Bencher) {
     });
 }
 
-fn search_full<R: Rope + From<String>>(b: &mut Bencher) {
+fn search_full<R: Rope + From<String>>(b: &mut Bencher, size: &usize) {
     let filename = format!("{}/data/realworld.txt", env!("CARGO_MANIFEST_DIR"));
     // read the file into a string
     let file = File::open(filename).unwrap();
     let mut reader = BufReader::new(file);
     let mut contents = String::new();
     reader.read_to_string(&mut contents).unwrap();
-    // duplicate contents 40 times
-    let contents = contents.repeat(40);
+    let repeat = size / contents.len();
+    let contents = contents.repeat(repeat);
+    let len = contents.len();
 
     let r = R::from(contents);
 
     let re = Regex::new(r"(?s)foo..fob").unwrap();
     b.iter(|| {
-        black_box(r.full_search(&re));
+        let idx = r.full_search(&re);
+        assert_eq!(idx, len);
+        black_box(idx);
+    });
+}
+
+fn build_string<R: Rope + From<String>>(b: &mut Bencher, size: &usize) {
+    let filename = format!("{}/data/realworld.txt", env!("CARGO_MANIFEST_DIR"));
+    // read the file into a string
+    let file = File::open(filename).unwrap();
+    let mut reader = BufReader::new(file);
+    let mut contents = String::new();
+    reader.read_to_string(&mut contents).unwrap();
+    let repeat = size / contents.len();
+    let contents = contents.repeat(repeat);
+
+    let r = R::from(contents);
+
+    b.iter(|| {
+        black_box(r.get_string());
     });
 }
 
@@ -391,10 +427,37 @@ fn bench_search_full(c: &mut Criterion) {
     let mut group = c.benchmark_group("search_full");
     group.sample_size(50);
 
-    group.bench_function("buffer", search_full::<Buffer>);
-    group.bench_function("jumprope", search_full::<JumpRope>);
-    group.bench_function("ropey", search_full::<RopeyRope>);
-    group.bench_function("crop", search_full::<CropRope>);
+    for (size, sample) in &[(10, 100), (15, 100), (20, 50), (25, 10), (30, 10)] {
+        group.sample_size(*sample);
+        let size = &usize::pow(2, *size);
+        let id = BenchmarkId::new("buffer", size);
+        group.bench_with_input(id, size, search_full::<Buffer>);
+        let id = BenchmarkId::new("jumprope", size);
+        group.bench_with_input(id, size, search_full::<JumpRope>);
+        let id = BenchmarkId::new("ropey", size);
+        group.bench_with_input(id, size, search_full::<RopeyRope>);
+        let id = BenchmarkId::new("crop", size);
+        group.bench_with_input(id, size, search_full::<CropRope>);
+    }
+    group.finish();
+}
+
+#[allow(unused)]
+fn bench_build_string(c: &mut Criterion) {
+    let mut group = c.benchmark_group("build_string");
+
+    for (size, sample) in &[(10, 100), (20, 50), (30, 10)] {
+        group.sample_size(*sample);
+        let size = &usize::pow(2, *size);
+        let id = BenchmarkId::new("buffer", size);
+        group.bench_with_input(id, size, build_string::<Buffer>);
+        let id = BenchmarkId::new("jumprope", size);
+        group.bench_with_input(id, size, build_string::<JumpRope>);
+        let id = BenchmarkId::new("ropey", size);
+        group.bench_with_input(id, size, build_string::<RopeyRope>);
+        let id = BenchmarkId::new("crop", size);
+        group.bench_with_input(id, size, build_string::<CropRope>);
+    }
     group.finish();
 }
 
@@ -497,6 +560,7 @@ criterion_group!(
     bench_append_small,
     bench_search_linewise,
     bench_search_full,
+    bench_build_string,
     bench_ins_random,
     bench_stable_ins_del,
     realworld
