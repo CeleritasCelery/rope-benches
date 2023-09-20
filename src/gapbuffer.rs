@@ -2,8 +2,9 @@ use crate::fast_str_tools::*;
 #[cfg(feature = "line_conversion")]
 use crate::utils::count_lines;
 use crate::utils::str_chars_to_bytes_rev;
+use get_size::GetSize;
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, GetSize)]
 pub struct GapBuffer<const LEN: usize> {
     data: [u8; LEN],
 

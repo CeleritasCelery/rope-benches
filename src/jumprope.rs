@@ -17,6 +17,7 @@ use std::ops::Range;
 use std::ptr::null_mut;
 use rand::prelude::*;
 use rand::Rng;
+use get_size::GetSize;
 use crate::fast_str_tools::*;
 use crate::gapbuffer::GapBuffer;
 // use crate::utils::*;
@@ -54,7 +55,9 @@ type RopeRng = SmallRng;
 // of that space taken up by characters and by the height are different depentant on a node's
 // height.
 #[repr(C)]
+#[derive(GetSize)]
 pub struct JumpRope {
+    #[get_size(size = 0)]
     rng: RopeRng,
     // The total number of characters in the rope
     // num_chars: usize,
@@ -82,6 +85,7 @@ pub struct JumpRope {
 unsafe impl Send for JumpRope {}
 unsafe impl Sync for JumpRope {}
 
+#[derive(GetSize)]
 pub(super) struct Node {
     // The first num_bytes of this store a valid utf8 string.
     // str: [u8; NODE_STR_SIZE],
@@ -98,7 +102,15 @@ pub(super) struct Node {
     // Only the first height items are used in this. Earlier versions made explicit allocator calls
     // to reduce memory usage, but that makes miri quite sad, so I'm now just wasting some memory
     // in each nexts[] array.
+    #[get_size(size_fn = next_node_size)]
     nexts: [SkipEntry; MAX_HEIGHT+1],
+}
+
+fn next_node_size(nexts: &[SkipEntry; MAX_HEIGHT+1]) -> usize {
+    match unsafe {nexts[0].node.as_ref()} {
+        Some(n) => n.get_size(),
+        None => 0,
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

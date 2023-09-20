@@ -32,6 +32,7 @@ buffered = []
 [dependencies]
 rand = { version = "0.8", features = ["small_rng"] }
 str_indices = "0.4.0"
+get-size = {path = "/Users/troyhinckley/repos/get-size", features = ["derive"]}
 
 [dev-dependencies]
 criterion = "0.4.0"
