@@ -6,9 +6,11 @@ use rand::prelude::*;
 mod rope;
 use self::rope::*;
 use crop::Rope as CropRope;
+use get_size::GetSize;
 use jumprope::JumpRope;
 use regex::Regex;
 use ropey::Rope as RopeyRope;
+use std::any::type_name;
 use std::{
     borrow::Cow,
     cmp::min,
@@ -30,9 +32,14 @@ fn random_ascii_string(rng: &mut SmallRng, len: usize) -> String {
 }
 
 fn random_string(rng: &mut SmallRng, len: usize) -> String {
-    (0..len)
-        .map(|_| std::char::from_u32(rng.gen_range(0x0000..0xD7FF)).unwrap())
-        .collect()
+    let mut count = len as isize;
+    let mut string = String::new();
+    while count > 0 {
+        let chr = std::char::from_u32(rng.gen_range(0x0000..0xD7FF)).unwrap();
+        count -= chr.len_utf8() as isize;
+        string.push(chr);
+    }
+    string
 }
 
 impl Rope for JumpRope {
@@ -356,6 +363,25 @@ fn create<R: for<'a> From<&'a str>>(b: &mut Bencher) {
     });
 }
 
+fn space_overhead<R: From<String> + GetSize>(size: usize) {
+    let rng = &mut SmallRng::seed_from_u64(123);
+    let string = random_string(rng, size);
+    let len = string.len();
+    let rope = R::from(string);
+    let size = GetSize::get_size(&rope);
+    let overhead = size - len;
+    let percent_overhead = (overhead as f64 / len as f64) * 100.0;
+    println!("{}: {:.2}%", type_name::<R>(), percent_overhead);
+}
+
+fn report_space_overhead() {
+    let size = usize::pow(2, 20);
+    space_overhead::<Buffer>(size);
+    space_overhead::<JumpRope>(size);
+    space_overhead::<RopeyRope>(size);
+    space_overhead::<CropRope>(size);
+}
+
 fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) {
     let target_length = *target_length as usize;
     let mut rng = SmallRng::seed_from_u64(123);
@@ -567,3 +593,7 @@ criterion_group!(
 );
 // criterion_group!(benches, bench_all);
 criterion_main!(benches);
+
+// fn main() {
+//     report_space_overhead()
+// }
