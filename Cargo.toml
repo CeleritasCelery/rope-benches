@@ -32,7 +32,7 @@ buffered = []
 [dependencies]
 rand = { version = "0.8", features = ["small_rng"] }
 str_indices = "0.4.0"
-get-size = {path = "/Users/troyhinckley/repos/get-size", features = ["derive"]}
+get-size = {git = "https://github.com/CeleritasCelery/get-size.git", branch = "boxed_slice_fix", features = ["derive"]}
 
 [dev-dependencies]
 criterion = "0.4.0"

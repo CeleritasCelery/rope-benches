@@ -15,4 +15,4 @@ crdt-testdata = { path = "../crdt-testdata" }
 crop = { path = "/Users/troyhinckley/repos/crop" }
 text-buffer = {path = "/Users/troyhinckley/rune/crates/text-buffer"}
 regex = "1.9.5"
-get-size = {path = "/Users/troyhinckley/repos/get-size"}
+get-size = {git = "https://github.com/CeleritasCelery/get-size.git", branch = "boxed_slice_fix", features = ["derive"]}

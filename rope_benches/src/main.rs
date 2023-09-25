@@ -374,12 +374,40 @@ fn space_overhead<R: From<String> + GetSize>(size: usize) {
     println!("{}: {:.2}%", type_name::<R>(), percent_overhead);
 }
 
+fn space_overhead_edits<R: Rope + From<String> + GetSize>(size: usize) {
+    let test_data = load_named_data("automerge-paper");
+
+    let mut r = R::new();
+    for _ in 0..size {
+        for txn in &test_data.txns {
+            for TestPatch(pos, del, ins) in &txn.patches {
+                r.edit_at(*pos, *del, &ins);
+            }
+        }
+    }
+    let len = r.byte_len();
+    let size = GetSize::get_size(&r);
+    let overhead = size - len;
+    let percent_overhead = (overhead as f64 / len as f64) * 100.0;
+    println!("{}: {:.2}%", type_name::<R>(), percent_overhead);
+}
+
+#[allow(unused)]
 fn report_space_overhead() {
     let size = usize::pow(2, 20);
     space_overhead::<Buffer>(size);
     space_overhead::<JumpRope>(size);
     space_overhead::<RopeyRope>(size);
     space_overhead::<CropRope>(size);
+}
+
+#[allow(unused)]
+fn report_space_overhead_edits() {
+    let size = 20;
+    space_overhead_edits::<Buffer>(size);
+    space_overhead_edits::<JumpRope>(size);
+    space_overhead_edits::<RopeyRope>(size);
+    space_overhead_edits::<CropRope>(size);
 }
 
 fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) {
@@ -572,10 +600,6 @@ fn realworld(c: &mut Criterion) {
         x::<RopeyRope>(&mut group, name, &test_data_chars);
         x::<JumpRope>(&mut group, name, &test_data_chars);
         x::<CropRope>(&mut group, name, &test_data_bytes);
-
-        // This takes a long time to run.
-        // x::<String>(&mut group, name, &test_data);
-
         group.finish();
     }
 }
@@ -591,7 +615,6 @@ criterion_group!(
     bench_stable_ins_del,
     realworld
 );
-// criterion_group!(benches, bench_all);
 criterion_main!(benches);
 
 // fn main() {
