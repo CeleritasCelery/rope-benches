@@ -44,7 +44,7 @@ impl TestData {
     /// This method returns a clone of the testing data using byte offsets instead of codepoint
     /// indexes.
     pub fn chars_to_bytes(&self) -> Self {
-        assert_eq!(false, self.using_byte_positions);
+        assert!(!self.using_byte_positions);
 
         let mut r = ropey::Rope::new();
 

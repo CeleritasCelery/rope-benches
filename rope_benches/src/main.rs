@@ -558,9 +558,16 @@ fn bench_stable_ins_del(c: &mut Criterion) {
 
 fn load_named_data(name: &str) -> TestData {
     let filename = format!(
-        "{}/../benchmark_data/{}.json.gz",
+        "{}/../benchmark_data/{name}.json.gz",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    load_testing_data(&filename)
+}
+
+fn load_named_ascii_data(name: &str) -> TestData {
+    let filename = format!(
+        "{}/../benchmark_data/ascii_only/{name}.json.gz",
         env!("CARGO_MANIFEST_DIR"),
-        name
     );
     load_testing_data(&filename)
 }
@@ -570,18 +577,15 @@ const DATASETS: &[&str] = &[
     "rustcode",
     "sveltecomponent",
     "seph-blog1",
+    "friendsforever_flat",
 ];
 
-fn realworld(c: &mut Criterion) {
+fn realworld_unicode(c: &mut Criterion) {
     for name in DATASETS {
-        let mut group = c.benchmark_group("realworld");
-        let test_data_chars = load_named_data(name);
-        group.throughput(Throughput::Elements(test_data_chars.len() as u64));
-        let test_data_bytes = test_data_chars.chars_to_bytes();
+        let mut group = c.benchmark_group("realworld_unicode");
+        let test_data = load_named_data(name);
 
         fn x<R: Rope>(group: &mut BenchmarkGroup<WallTime>, name: &str, test_data: &TestData) {
-            assert_eq!(R::EDITS_USE_BYTE_OFFSETS, test_data.using_byte_positions);
-
             group.bench_function(BenchmarkId::new(R::NAME, name), |b| {
                 b.iter(|| {
                     let mut r = R::new();
@@ -596,10 +600,37 @@ fn realworld(c: &mut Criterion) {
             });
         }
 
-        x::<Buffer>(&mut group, name, &test_data_chars);
-        x::<RopeyRope>(&mut group, name, &test_data_chars);
-        x::<JumpRope>(&mut group, name, &test_data_chars);
-        x::<CropRope>(&mut group, name, &test_data_bytes);
+        x::<Buffer>(&mut group, name, &test_data);
+        x::<JumpRope>(&mut group, name, &test_data);
+        x::<RopeyRope>(&mut group, name, &test_data);
+        group.finish();
+    }
+}
+
+fn realworld_ascii(c: &mut Criterion) {
+    for name in DATASETS {
+        let mut group = c.benchmark_group("realworld_ascii");
+        let test_data = load_named_ascii_data(name);
+
+        fn x<R: Rope>(group: &mut BenchmarkGroup<WallTime>, name: &str, test_data: &TestData) {
+            group.bench_function(BenchmarkId::new(R::NAME, name), |b| {
+                b.iter(|| {
+                    let mut r = R::new();
+                    for txn in &test_data.txns {
+                        for TestPatch(pos, del, ins) in &txn.patches {
+                            r.edit_at(*pos, *del, ins);
+                        }
+                    }
+                    assert_eq!(r.char_len(), test_data.end_content.len());
+                    black_box(r.char_len());
+                })
+            });
+        }
+
+        x::<Buffer>(&mut group, name, &test_data);
+        x::<CropRope>(&mut group, name, &test_data);
+        x::<JumpRope>(&mut group, name, &test_data);
+        x::<RopeyRope>(&mut group, name, &test_data);
         group.finish();
     }
 }
@@ -613,7 +644,8 @@ criterion_group!(
     bench_build_string,
     bench_ins_random,
     bench_stable_ins_del,
-    realworld
+    realworld_unicode,
+    realworld_ascii,
 );
 criterion_main!(benches);
 
