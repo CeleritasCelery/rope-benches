@@ -354,15 +354,6 @@ fn ins_random<R: Rope>(b: &mut Bencher) {
     black_box(len);
 }
 
-fn create<R: for<'a> From<&'a str>>(b: &mut Bencher) {
-    let rng = &mut SmallRng::seed_from_u64(123);
-    let string = random_string(rng, usize::pow(2, 20));
-    let init = string.as_str();
-    b.iter(|| {
-        black_box(R::from(init));
-    });
-}
-
 fn space_overhead<R: From<String> + GetSize>(size: usize) {
     let rng = &mut SmallRng::seed_from_u64(123);
     let string = random_string(rng, size);
@@ -444,13 +435,43 @@ fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) 
     black_box(r.char_len());
 }
 
-#[allow(unused)]
 fn bench_create(c: &mut Criterion) {
-    let mut group = c.benchmark_group("create");
-    group.bench_function("buffer", create::<Buffer>);
-    group.bench_function("jumprope", create::<JumpRope>);
-    group.bench_function("ropey", create::<RopeyRope>);
-    group.bench_function("crop", create::<CropRope>);
+    let mut group = c.benchmark_group("from_string");
+
+    let size = usize::pow(2, 20);
+    let string = "à".repeat(size / 2);
+    assert_eq!(string.len(), size);
+
+    group.bench_function("clone", |b| b.iter(|| string.clone()));
+    group.bench_function("buffer", |b| b.iter(|| Buffer::from(string.clone())));
+    group.bench_function("crop", |b| b.iter(|| CropRope::from(string.clone())));
+    group.bench_function("jumprope", |b| b.iter(|| JumpRope::from(string.clone())));
+    group.bench_function("ropey", |b| b.iter(|| RopeyRope::from(string.clone())));
+    group.finish();
+
+    let mut group = c.benchmark_group("from_str");
+    group.bench_function("buffer", |b| b.iter(|| Buffer::from(&*string)));
+    group.bench_function("crop", |b| b.iter(|| CropRope::from(&*string)));
+    group.bench_function("jumprope", |b| b.iter(|| JumpRope::from(&*string)));
+    group.bench_function("ropey", |b| b.iter(|| RopeyRope::from(&*string)));
+    group.finish();
+}
+
+fn bench_save(c: &mut Criterion) {
+    let mut group = c.benchmark_group("save");
+
+    let size = usize::pow(2, 20);
+    let string = "à".repeat(size / 2);
+    assert_eq!(string.len(), size);
+
+    let x = Buffer::from(string.clone());
+    group.bench_function("buffer", |b| b.iter(|| ToString::to_string(&x)));
+    let x = CropRope::from(string.clone());
+    group.bench_function("crop", |b| b.iter(|| ToString::to_string(&x)));
+    let x = JumpRope::from(string.clone());
+    group.bench_function("jumprope", |b| b.iter(|| JumpRope::to_string(&x)));
+    let x = RopeyRope::from(string.clone());
+    group.bench_function("ropey", |b| b.iter(|| ToString::to_string(&x)));
     group.finish();
 }
 
@@ -638,6 +659,7 @@ fn realworld_ascii(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_create,
+    bench_save,
     bench_append_small,
     bench_search_linewise,
     bench_search_full,
