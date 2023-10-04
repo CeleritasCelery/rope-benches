@@ -437,8 +437,9 @@ fn stable_ins_del<R: Rope + From<String>>(b: &mut Bencher, target_length: &u64) 
 
 fn bench_create(c: &mut Criterion) {
     let mut group = c.benchmark_group("from_string");
+    group.sample_size(10);
 
-    let size = usize::pow(2, 20);
+    let size = usize::pow(2, 30);
     let string = "à".repeat(size / 2);
     assert_eq!(string.len(), size);
 
@@ -624,6 +625,8 @@ fn realworld_unicode(c: &mut Criterion) {
         x::<Buffer>(&mut group, name, &test_data);
         x::<JumpRope>(&mut group, name, &test_data);
         x::<RopeyRope>(&mut group, name, &test_data);
+        // doesn't support unicode indexing
+        // x::<Crop>(&mut group, name, &test_data);
         group.finish();
     }
 }
