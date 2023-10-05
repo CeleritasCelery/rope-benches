@@ -255,29 +255,93 @@ fn gen_strings(rng: &mut SmallRng) -> Vec<String> {
     strings
 }
 
-fn gen_small_string(rng: &mut SmallRng) -> Vec<String> {
-    let mut strings = Vec::<String>::new();
-    for _ in 0..1000 {
-        let len = rng.gen_range(1..3);
-        strings.push(random_string(rng, len));
-    }
-    strings
-}
-
-fn append_small<R: Rope>(b: &mut Bencher) {
-    let mut rng = SmallRng::seed_from_u64(123);
-    let strings = gen_small_string(&mut rng);
-
-    let mut r = R::new();
-    let mut len = 0;
+fn append<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher) {
+    let init = "a".repeat(1024);
+    let mut r = R::from(&*init);
+    let target = usize::pow(2, 20) - init.len();
+    let text = "ropes";
+    let count = target / text.len();
+    let mut len = init.len();
     b.iter(|| {
-        for text in &strings {
-            r.insert_at(len, text.as_str());
-            len += text.chars().count();
+        for _ in 0..count {
+            r.insert_at(len, text);
+            len += text.len();
         }
     });
+}
 
-    black_box(r.char_len());
+fn is_even(x: usize) -> bool {
+    x % 2 == 0
+}
+
+fn multiple_cursors_smart<R: Rope + for<'a> From<&'a str>>(
+    b: &mut Bencher,
+    params: &(usize, usize, usize, usize),
+) {
+    let size: usize = params.0;
+    let cursors: usize = params.1;
+    let step: usize = params.2;
+    let width: usize = params.3;
+    let text = "b";
+    let l = text.len();
+    let init = "a".repeat(size);
+    let mut container = R::from(&*init);
+    b.iter(|| {
+        let orig_len = container.byte_len();
+        for mc in 0..width {
+            // every cursor will insert `width` characters
+            // check if mc is odd
+
+            for i in 0..cursors {
+                let idx = if is_even(mc) {
+                    (i * (step + ((mc + 1) * l))) + mc * l
+                } else {
+                    let i = cursors - 1 - i;
+                    (i * (step + (mc * l))) + mc * l
+                };
+                container.insert_at(idx, text);
+            }
+        }
+        if is_even(width) {
+            // if even, last cursor was odd. so delete forwards
+            let idx = (width - 1) * l;
+            container.del_at(idx, cursors * width * l);
+        } else {
+            // if odd, last cursor was even. so delete backwards
+            let idx = ((cursors - 1) * (step + (width * l))) + (width - 1) * l;
+            let len = cursors * width * l;
+            container.del_at(idx - len, len);
+        }
+        assert_eq!(container.byte_len(), orig_len);
+    });
+}
+
+fn multiple_cursors_impl<R: Rope + for<'a> From<&'a str>>(
+    b: &mut Bencher,
+    params: &(usize, usize, usize, usize),
+) {
+    let size: usize = params.0;
+    let cursors: usize = params.1;
+    let step: usize = params.2;
+    let width: usize = params.3;
+    let text = "b";
+    let l = text.len();
+    let init = "a".repeat(size);
+    let mut container = R::from(&*init);
+    b.iter(|| {
+        let orig_len = container.byte_len();
+        for mc in 0..width {
+            // every cursor will insert `width` characters
+            for i in 0..cursors {
+                let idx = (i * (step + ((mc + 1) * l))) + mc * l;
+                container.insert_at(idx, text);
+            }
+        }
+        let idx = ((cursors - 1) * (step + (width * l))) + (width - 1) * l;
+        let del_len = cursors * width * l;
+        container.del_at(idx - del_len, del_len);
+        assert_eq!(container.byte_len(), orig_len);
+    });
 }
 
 fn search_linewise<R: Rope + From<String>>(b: &mut Bencher) {
@@ -477,12 +541,79 @@ fn bench_save(c: &mut Criterion) {
 }
 
 #[allow(unused)]
-fn bench_append_small(c: &mut Criterion) {
-    let mut group = c.benchmark_group("append_small");
+fn bench_append(c: &mut Criterion) {
+    let mut group = c.benchmark_group("append");
 
-    group.bench_function("buffer", append_small::<Buffer>);
-    group.bench_function("jumprope", append_small::<JumpRope>);
-    group.bench_function("ropey", append_small::<RopeyRope>);
+    group.bench_function("buffer", append::<Buffer>);
+    group.bench_function("crop", append::<CropRope>);
+    group.bench_function("jumprope", append::<JumpRope>);
+    group.bench_function("ropey", append::<RopeyRope>);
+    group.finish();
+}
+
+fn bench_multiple_cursors_smart(c: &mut Criterion) {
+    let mut group = c.benchmark_group("multiple_cursors_smart");
+    use BenchmarkId as id;
+
+    for step in [
+        10, 50, 100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
+    ] {
+        // size, cursors, width
+        let cursors = 1000;
+        let width = 10;
+        let size = 10000 * 1000;
+        let params = &(size, cursors, step, width);
+        let d = &format!("cursors_{cursors}/step_{step}");
+
+        group.bench_function(id::new("naive", d), |b| {
+            multiple_cursors_impl::<Buffer>(b, params)
+        });
+        group.bench_function(id::new("smart", d), |b| {
+            multiple_cursors_smart::<Buffer>(b, params)
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_multiple_cursors(c: &mut Criterion) {
+    let mut group = c.benchmark_group("multiple_cursors");
+    use BenchmarkId as id;
+
+    for (pow, sample) in &[
+        (15, 100),
+        (16, 90),
+        (17, 80),
+        (18, 70),
+        (19, 60),
+        (20, 50),
+        (21, 20),
+        (22, 10),
+        (23, 10),
+    ] {
+        // size, cursors, width
+        group.sample_size(*sample);
+        let size = usize::pow(2, *pow);
+        let cursors = 1000;
+        let step = 1000;
+        let width = 20;
+        if cursors * step >= size {
+            continue;
+        }
+        let params = &(size, cursors, step, width);
+        let d = &format!("2^{pow}/{size}/{cursors}/{step}");
+
+        // group.bench_function(id::new("buffer", d), |b| {
+        //     multiple_cursors_impl::<Buffer>(b, params)
+        // });
+        group.bench_function(id::new("buffer", d), |b| {
+            multiple_cursors_smart::<Buffer>(b, params)
+        });
+        group.bench_function(id::new("jumprope", d), |b| {
+            multiple_cursors_smart::<JumpRope>(b, params)
+        });
+    }
+
     group.finish();
 }
 
@@ -663,7 +794,9 @@ criterion_group!(
     benches,
     bench_create,
     bench_save,
-    bench_append_small,
+    bench_append,
+    bench_multiple_cursors_smart,
+    bench_multiple_cursors,
     bench_search_linewise,
     bench_search_full,
     bench_build_string,
