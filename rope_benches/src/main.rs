@@ -1,14 +1,12 @@
-// #[macro_use]
-extern crate criterion;
 use crdt_testdata::*;
 use criterion::*;
 mod rope;
 use self::rope::*;
-use crop::Rope as CropRope;
+use crop::Rope as Crop;
 use get_size::GetSize;
 use jumprope::JumpRope;
 use regex::Regex;
-use ropey::Rope as RopeyRope;
+use ropey::Rope as Ropey;
 use std::any::type_name;
 use std::{
     borrow::Cow,
@@ -58,12 +56,12 @@ impl Rope for JumpRope {
     }
 }
 
-impl Rope for RopeyRope {
+impl Rope for Ropey {
     const NAME: &'static str = "Ropey";
 
     #[inline(always)]
     fn new() -> Self {
-        RopeyRope::new()
+        Ropey::new()
     }
 
     #[inline(always)]
@@ -113,7 +111,7 @@ impl Rope for RopeyRope {
     }
 }
 
-impl Rope for CropRope {
+impl Rope for Crop {
     const NAME: &'static str = "Crop";
     const EDITS_USE_BYTE_OFFSETS: bool = true;
 
@@ -235,16 +233,19 @@ fn gen_realworld_text(size: usize) -> String {
 }
 
 fn append<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher) {
-    let init = "a".repeat(1024);
-    let mut r = R::from(&*init);
-    let target = usize::pow(2, 20) - init.len();
+    let mut r = R::new();
+    let target = usize::pow(2, 20);
     let text = "ropes";
     let count = target / text.len();
-    let mut len = init.len();
+    let mut len = 0;
     b.iter(|| {
         for _ in 0..count {
             r.insert_at(len, text);
             len += text.len();
+        }
+        len -= text.len();
+        for _ in 0..count {
+            r.del_at(0, text.len());
         }
     });
 }
@@ -370,6 +371,21 @@ fn build_string<R: Rope + From<String>>(b: &mut Bencher, size: &usize) {
     });
 }
 
+fn build_from_edits<R: Rope + From<String>>(size: usize) -> R {
+    let test_data = load_named_data("automerge-paper");
+    let len = test_data.end_content.len();
+
+    let mut r = R::new();
+    for _ in 0..(size / len) {
+        for txn in &test_data.txns {
+            for TestPatch(pos, del, ins) in &txn.patches {
+                r.edit_at(*pos, *del, &ins);
+            }
+        }
+    }
+    r
+}
+
 fn space_overhead<R: From<String> + GetSize>(size: usize) {
     let string = gen_realworld_text(size);
     let len = string.len();
@@ -381,16 +397,7 @@ fn space_overhead<R: From<String> + GetSize>(size: usize) {
 }
 
 fn space_overhead_edits<R: Rope + From<String> + GetSize>(size: usize) {
-    let test_data = load_named_data("automerge-paper");
-
-    let mut r = R::new();
-    for _ in 0..size {
-        for txn in &test_data.txns {
-            for TestPatch(pos, del, ins) in &txn.patches {
-                r.edit_at(*pos, *del, &ins);
-            }
-        }
-    }
+    let r: R = build_from_edits(size);
     let len = r.byte_len();
     let size = GetSize::get_size(&r);
     let overhead = size - len;
@@ -403,17 +410,17 @@ fn report_space_overhead() {
     let size = usize::pow(2, 20);
     space_overhead::<Buffer>(size);
     space_overhead::<JumpRope>(size);
-    space_overhead::<RopeyRope>(size);
-    space_overhead::<CropRope>(size);
+    space_overhead::<Ropey>(size);
+    space_overhead::<Crop>(size);
 }
 
 #[allow(unused)]
 fn report_space_overhead_edits() {
-    let size = 20;
+    let size = usize::pow(2, 20);
     space_overhead_edits::<Buffer>(size);
     space_overhead_edits::<JumpRope>(size);
-    space_overhead_edits::<RopeyRope>(size);
-    space_overhead_edits::<CropRope>(size);
+    space_overhead_edits::<Ropey>(size);
+    space_overhead_edits::<Crop>(size);
 }
 
 fn bench_create(c: &mut Criterion) {
@@ -426,16 +433,16 @@ fn bench_create(c: &mut Criterion) {
 
     group.bench_function("clone", |b| b.iter(|| string.clone()));
     group.bench_function("buffer", |b| b.iter(|| Buffer::from(string.clone())));
-    group.bench_function("crop", |b| b.iter(|| CropRope::from(string.clone())));
+    group.bench_function("crop", |b| b.iter(|| Crop::from(string.clone())));
     group.bench_function("jumprope", |b| b.iter(|| JumpRope::from(string.clone())));
-    group.bench_function("ropey", |b| b.iter(|| RopeyRope::from(string.clone())));
+    group.bench_function("ropey", |b| b.iter(|| Ropey::from(string.clone())));
     group.finish();
 
     let mut group = c.benchmark_group("from_str");
     group.bench_function("buffer", |b| b.iter(|| Buffer::from(&*string)));
-    group.bench_function("crop", |b| b.iter(|| CropRope::from(&*string)));
+    group.bench_function("crop", |b| b.iter(|| Crop::from(&*string)));
     group.bench_function("jumprope", |b| b.iter(|| JumpRope::from(&*string)));
-    group.bench_function("ropey", |b| b.iter(|| RopeyRope::from(&*string)));
+    group.bench_function("ropey", |b| b.iter(|| Ropey::from(&*string)));
     group.finish();
 }
 
@@ -448,11 +455,11 @@ fn bench_save(c: &mut Criterion) {
 
     let x = Buffer::from(string.clone());
     group.bench_function("buffer", |b| b.iter(|| ToString::to_string(&x)));
-    let x = CropRope::from(string.clone());
+    let x = Crop::from(string.clone());
     group.bench_function("crop", |b| b.iter(|| ToString::to_string(&x)));
     let x = JumpRope::from(string.clone());
     group.bench_function("jumprope", |b| b.iter(|| JumpRope::to_string(&x)));
-    let x = RopeyRope::from(string.clone());
+    let x = Ropey::from(string.clone());
     group.bench_function("ropey", |b| b.iter(|| ToString::to_string(&x)));
     group.finish();
 }
@@ -461,9 +468,9 @@ fn bench_append(c: &mut Criterion) {
     let mut group = c.benchmark_group("append");
 
     group.bench_function("buffer", append::<Buffer>);
-    group.bench_function("crop", append::<CropRope>);
+    group.bench_function("crop", append::<Crop>);
     group.bench_function("jumprope", append::<JumpRope>);
-    group.bench_function("ropey", append::<RopeyRope>);
+    group.bench_function("ropey", append::<Ropey>);
     group.finish();
 }
 
@@ -500,15 +507,11 @@ fn bench_mc_cursors(c: &mut Criterion) {
         group.bench_function(id::new("buffer", cursors), |b| {
             mc_smart::<Buffer>(b, params)
         });
-        group.bench_function(id::new("crop", cursors), |b| {
-            mc_smart::<CropRope>(b, params)
-        });
+        group.bench_function(id::new("crop", cursors), |b| mc_smart::<Crop>(b, params));
         group.bench_function(id::new("jumprope", cursors), |b| {
             mc_smart::<JumpRope>(b, params)
         });
-        group.bench_function(id::new("ropey", cursors), |b| {
-            mc_smart::<RopeyRope>(b, params)
-        });
+        group.bench_function(id::new("ropey", cursors), |b| mc_smart::<Ropey>(b, params));
     }
 
     group.finish();
@@ -527,11 +530,11 @@ fn bench_mc_size(c: &mut Criterion) {
     ] {
         let params = &(size, cursors, step, width);
         group.bench_function(id::new("buffer", step), |b| mc_smart::<Buffer>(b, params));
-        group.bench_function(id::new("crop", step), |b| mc_smart::<CropRope>(b, params));
+        group.bench_function(id::new("crop", step), |b| mc_smart::<Crop>(b, params));
         group.bench_function(id::new("jumprope", step), |b| {
             mc_smart::<JumpRope>(b, params)
         });
-        group.bench_function(id::new("ropey", step), |b| mc_smart::<RopeyRope>(b, params));
+        group.bench_function(id::new("ropey", step), |b| mc_smart::<Ropey>(b, params));
     }
 
     group.finish();
@@ -543,8 +546,8 @@ fn bench_search_linewise(c: &mut Criterion) {
 
     group.bench_function("buffer", search_linewise::<Buffer>);
     group.bench_function("jumprope", search_linewise::<JumpRope>);
-    group.bench_function("ropey", search_linewise::<RopeyRope>);
-    group.bench_function("crop", search_linewise::<CropRope>);
+    group.bench_function("ropey", search_linewise::<Ropey>);
+    group.bench_function("crop", search_linewise::<Crop>);
     group.finish();
 }
 
@@ -567,13 +570,11 @@ fn bench_search_full(c: &mut Criterion) {
         group.sample_size(sample);
         group.bench_function(id::new("move_gap", size), |b| move_gap::<Buffer>(b, text));
         group.bench_function(id::new("buffer", size), |b| search_full::<Buffer>(b, text));
-        group.bench_function(id::new("crop", size), |b| search_full::<CropRope>(b, text));
+        group.bench_function(id::new("crop", size), |b| search_full::<Crop>(b, text));
         group.bench_function(id::new("jumprope", size), |b| {
             search_full::<JumpRope>(b, text)
         });
-        group.bench_function(id::new("ropey", size), |b| {
-            search_full::<RopeyRope>(b, text)
-        });
+        group.bench_function(id::new("ropey", size), |b| search_full::<Ropey>(b, text));
     }
     group.finish();
 }
@@ -589,9 +590,9 @@ fn bench_build_string(c: &mut Criterion) {
         let id = BenchmarkId::new("jumprope", size);
         group.bench_with_input(id, size, build_string::<JumpRope>);
         let id = BenchmarkId::new("ropey", size);
-        group.bench_with_input(id, size, build_string::<RopeyRope>);
+        group.bench_with_input(id, size, build_string::<Ropey>);
         let id = BenchmarkId::new("crop", size);
-        group.bench_with_input(id, size, build_string::<CropRope>);
+        group.bench_with_input(id, size, build_string::<Crop>);
     }
     group.finish();
 }
@@ -642,7 +643,7 @@ fn realworld_unicode(c: &mut Criterion) {
 
         x::<Buffer>(&mut group, name, &test_data);
         x::<JumpRope>(&mut group, name, &test_data);
-        x::<RopeyRope>(&mut group, name, &test_data);
+        x::<Ropey>(&mut group, name, &test_data);
         // doesn't support unicode indexing
         // x::<Crop>(&mut group, name, &test_data);
         group.finish();
@@ -670,9 +671,9 @@ fn realworld_ascii(c: &mut Criterion) {
         }
 
         x::<Buffer>(&mut group, name, &test_data);
-        x::<CropRope>(&mut group, name, &test_data);
+        x::<Crop>(&mut group, name, &test_data);
         x::<JumpRope>(&mut group, name, &test_data);
-        x::<RopeyRope>(&mut group, name, &test_data);
+        x::<Ropey>(&mut group, name, &test_data);
         group.finish();
     }
 }
