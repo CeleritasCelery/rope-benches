@@ -371,7 +371,7 @@ fn build_string<R: Rope + From<String>>(b: &mut Bencher, size: &usize) {
     });
 }
 
-fn build_from_edits<R: Rope + From<String>>(size: usize) -> R {
+fn build_from_edits<R: Rope>(size: usize) -> R {
     let test_data = load_named_data("automerge-paper");
     let len = test_data.end_content.len();
 
@@ -386,17 +386,17 @@ fn build_from_edits<R: Rope + From<String>>(size: usize) -> R {
     r
 }
 
-fn space_overhead<R: From<String> + GetSize>(size: usize) {
+fn space_overhead<R: for<'a> From<&'a str> + GetSize>(size: usize) {
     let string = gen_realworld_text(size);
     let len = string.len();
-    let rope = R::from(string);
+    let rope = R::from(&*string);
     let size = GetSize::get_size(&rope);
     let overhead = size - len;
     let percent_overhead = (overhead as f64 / len as f64) * 100.0;
     println!("{}: {:.2}%", type_name::<R>(), percent_overhead);
 }
 
-fn space_overhead_edits<R: Rope + From<String> + GetSize>(size: usize) {
+fn space_overhead_edits<R: Rope + GetSize>(size: usize) {
     let r: R = build_from_edits(size);
     let len = r.byte_len();
     let size = GetSize::get_size(&r);

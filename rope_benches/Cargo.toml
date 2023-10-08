@@ -8,11 +8,9 @@ version = "0.1.0"
 [dependencies]
 criterion = "0.5"
 jumprope = { path = ".." }
-rand = { version = "0.8", features = ["small_rng"] }
-ropey = {path = "/Users/troyhinckley/repos/mod-ropey", features = ["simd"]}
-xi-rope = "0.3.0"
+ropey = {git = "https://github.com/CeleritasCelery/ropey.git", features = ["simd"]}
 crdt-testdata = { path = "../crdt-testdata" }
-crop = { path = "/Users/troyhinckley/repos/crop" }
-text-buffer = {path = "/Users/troyhinckley/rune/crates/text-buffer"}
+crop = { git = "https://github.com/CeleritasCelery/crop.git" }
+text-buffer = {git = "https://github.com/CeleritasCelery/rune.git", package = "text-buffer"}
 regex = "1.9.5"
 get-size = {git = "https://github.com/CeleritasCelery/get-size.git", branch = "boxed_slice_fix", features = ["derive"]}
