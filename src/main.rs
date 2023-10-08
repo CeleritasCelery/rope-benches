@@ -599,7 +599,7 @@ fn bench_build_string(c: &mut Criterion) {
 
 fn load_named_data(name: &str) -> TestData {
     let filename = format!(
-        "{}/../benchmark_data/{name}.json.gz",
+        "{}/benchmark_data/{name}.json.gz",
         env!("CARGO_MANIFEST_DIR")
     );
     load_testing_data(&filename)
@@ -607,7 +607,7 @@ fn load_named_data(name: &str) -> TestData {
 
 fn load_named_ascii_data(name: &str) -> TestData {
     let filename = format!(
-        "{}/../benchmark_data/ascii_only/{name}.json.gz",
+        "{}/benchmark_data/ascii_only/{name}.json.gz",
         env!("CARGO_MANIFEST_DIR"),
     );
     load_testing_data(&filename)

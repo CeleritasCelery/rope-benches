@@ -1,55 +1,15 @@
 [package]
-name = "jumprope"
-version = "1.1.2"
-authors = ["Joseph Gentle <me@josephg.com>"]
-edition = "2021"
-description = "Simple, fast rope (fancy string) library built on top of Skiplists"
-repository = "https://github.com/josephg/jumprope-rs"
-license = "ISC OR Apache-2.0"
-exclude = [
-    "benchmark_data/*",
-    ".github/**",
-]
+edition = "2018"
+name = "rope_benches"
+version = "0.1.0"
 
-[workspace]
-members = ["jumprope-wasm", "rope_benches", "crdt-testdata"]
-
-[features]
-default = ["ddos_protection"]
-# ddos_protection makes jumprope use a better RNG algorithm to avoid DOS
-# attacks
-ddos_protection = []
-# wchar_conversion adds support for converting wchar positions (eg from JS or
-# ObjC) into local unicode offsets.
-wchar_conversion = []
-
-# Line conversion adds support for editing using line/column offsets instead of character offsets.
-line_conversion = []
-
-# TODO: Remove me for 2.0 - the buffered feature is no longer needed.
-buffered = []
 
 [dependencies]
-rand = { version = "0.8", features = ["small_rng"] }
-str_indices = "0.4.0"
+criterion = "0.5"
+regex = "1.9.5"
+jumprope = { git = "https://github.com/CeleritasCelery/jumprope-rs.git" }
+ropey = {git = "https://github.com/CeleritasCelery/ropey.git", features = ["simd"]}
+crdt-testdata = { path = "crdt-testdata" }
+crop = { git = "https://github.com/CeleritasCelery/crop.git" }
+text-buffer = {git = "https://github.com/CeleritasCelery/rune.git", package = "text-buffer"}
 get-size = {git = "https://github.com/CeleritasCelery/get-size.git", branch = "boxed_slice_fix", features = ["derive"]}
-
-[dev-dependencies]
-criterion = "0.4.0"
-crdt-testdata = { path = "./crdt-testdata" }
-
-[[bench]]
-name = "benches"
-harness = false
-
-[profile.release]
-lto = true
-codegen-units = 1
-
-[profile.release.package.jumprope-wasm]
-#opt-level = "s"
-opt-level = 2
-
-
-[package.metadata.docs.rs]
-features = ["wchar_conversion"]
