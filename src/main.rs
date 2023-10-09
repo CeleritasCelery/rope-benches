@@ -87,7 +87,7 @@ impl Rope for Ropey {
         let mut lines = self.lines();
         let mut offset: usize = 0;
         lines.find(|line| {
-            let cow: Cow<str> = line.clone().into();
+            let cow: Cow<str> = (*line).into();
             let re_match = match cow {
                 Cow::Borrowed(x) => re.find(x).map(|x| x.start()),
                 Cow::Owned(x) => re.find(x.as_str()).map(|x| x.start()),
@@ -144,7 +144,7 @@ impl Rope for Crop {
             let re_match = if buf.len() == 1 {
                 re.find(buf[0]).map(|x| x.start())
             } else {
-                let string: String = buf.iter().map(|x| *x).collect();
+                let string: String = buf.iter().copied().collect();
                 re.find(string.as_str()).map(|x| x.start())
             };
 
@@ -379,7 +379,7 @@ fn build_from_edits<R: Rope>(size: usize) -> R {
     for _ in 0..(size / len) {
         for txn in &test_data.txns {
             for TestPatch(pos, del, ins) in &txn.patches {
-                r.edit_at(*pos, *del, &ins);
+                r.edit_at(*pos, *del, ins);
             }
         }
     }
@@ -449,7 +449,7 @@ fn bench_create(c: &mut Criterion) {
 fn bench_save(c: &mut Criterion) {
     let mut group = c.benchmark_group("save");
 
-    let size = usize::pow(2, 20);
+    let size = usize::pow(2, 30);
     let string = "à".repeat(size / 2);
     assert_eq!(string.len(), size);
 
