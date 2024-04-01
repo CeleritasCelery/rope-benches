@@ -7,9 +7,10 @@ version = "0.1.0"
 [dependencies]
 criterion = "0.5"
 regex = "1.9.5"
-jumprope = { git = "https://github.com/CeleritasCelery/jumprope-rs.git" }
-ropey = {git = "https://github.com/CeleritasCelery/ropey.git", features = ["simd"]}
+jumprope = { git = "https://github.com/CeleritasCelery/jumprope-rs.git", features = ["wchar_conversion", "line_conversion"] }
 crdt-testdata = { path = "crdt-testdata" }
 crop = { git = "https://github.com/CeleritasCelery/crop.git" }
 text-buffer = {git = "https://github.com/CeleritasCelery/rune.git", package = "text-buffer"}
 get-size = {git = "https://github.com/CeleritasCelery/get-size.git", branch = "boxed_slice_fix", features = ["derive"]}
+regex-cursor = "0.1.4"
+ropey = {version = "1.6.1", features = ["simd"]}

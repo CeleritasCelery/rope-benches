@@ -106,6 +106,12 @@ impl Rope for Ropey {
         offset
     }
 
+    fn line_search_cursor(&self, re: &regex_cursor::engines::meta::Regex) -> usize {
+        use regex_cursor::{Input, RopeyCursor};
+        let input = Input::new(RopeyCursor::new(self.slice(..)));
+        re.find(input).map(|m| m.start()).unwrap_or_else(|| self.byte_len())
+    }
+
     fn byte_len(&self) -> usize {
         self.len_bytes()
     }
@@ -216,7 +222,6 @@ impl Rope for Buffer {
     }
 }
 
-use crdt_testdata::{load_testing_data, TestData};
 use criterion::measurement::WallTime;
 
 fn gen_realworld_text(size: usize) -> String {
@@ -335,6 +340,17 @@ fn search_linewise<R: Rope + From<String>>(b: &mut Bencher) {
     });
 }
 
+fn search_cursor<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher, text: &str) {
+    let len = text.len();
+    let r = R::from(text);
+    let re = regex_cursor::engines::meta::Regex::new(r"foo(bar|baz)fob").unwrap();
+    b.iter(|| {
+        let idx = r.line_search_cursor(&re);
+        assert_eq!(idx, len);
+        black_box(idx);
+    });
+}
+
 fn search_full<R: Rope + for<'a> From<&'a str>>(b: &mut Bencher, text: &str) {
     let len = text.len();
     let container = R::from(text);
@@ -410,7 +426,7 @@ fn report_space_overhead() {
     let size = usize::pow(2, 20);
     space_overhead::<Buffer>(size);
     space_overhead::<JumpRope>(size);
-    space_overhead::<Ropey>(size);
+    // space_overhead::<Ropey>(size);
     space_overhead::<Crop>(size);
 }
 
@@ -419,7 +435,7 @@ fn report_space_overhead_edits() {
     let size = usize::pow(2, 20);
     space_overhead_edits::<Buffer>(size);
     space_overhead_edits::<JumpRope>(size);
-    space_overhead_edits::<Ropey>(size);
+    // space_overhead_edits::<Ropey>(size);
     space_overhead_edits::<Crop>(size);
 }
 
@@ -555,7 +571,9 @@ fn bench_search_full(c: &mut Criterion) {
     let mut group = c.benchmark_group("search_full");
     use BenchmarkId as id;
     let step = usize::pow(2, 27);
+    let small = usize::pow(2, 20);
     for (size, sample) in [
+        (small, 100),
         (step, 100),
         (step * 2, 75),
         (step * 3, 60),
@@ -575,6 +593,7 @@ fn bench_search_full(c: &mut Criterion) {
             search_full::<JumpRope>(b, text)
         });
         group.bench_function(id::new("ropey", size), |b| search_full::<Ropey>(b, text));
+        group.bench_function(id::new("ropey_cursor", size), |b| search_cursor::<Ropey>(b, text));
     }
     group.finish();
 }
@@ -641,7 +660,7 @@ fn realworld_unicode(c: &mut Criterion) {
             });
         }
 
-        x::<Buffer>(&mut group, name, &test_data);
+        // x::<Buffer>(&mut group, name, &test_data);
         x::<JumpRope>(&mut group, name, &test_data);
         x::<Ropey>(&mut group, name, &test_data);
         // doesn't support unicode indexing

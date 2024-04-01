@@ -23,6 +23,9 @@ pub trait Rope: From<String> {
     fn char_len(&self) -> usize;
     fn byte_len(&self) -> usize;
     fn line_search(&self, re: &regex::Regex) -> usize;
+    fn line_search_cursor(&self, _re: &regex_cursor::engines::meta::Regex) -> usize {
+        todo!()
+    }
     fn full_search(&self, re: &regex::Regex) -> usize {
         let string = self.to_string();
         re.find(string.as_str()).map(|m| m.start()).unwrap_or_else(|| self.byte_len())
